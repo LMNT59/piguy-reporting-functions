@@ -1,0 +1,4 @@
+/.netlify/functions/*
+  Access-Control-Allow-Origin: https://piguy-reporting.netlify.app
+  Access-Control-Allow-Methods: GET, POST, OPTIONS
+  Access-Control-Allow-Headers: Content-Type
