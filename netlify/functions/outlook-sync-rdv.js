@@ -1,46 +1,24 @@
-// netlify/functions/outlook-sync-rdv.js
-// Crée ou met à jour un événement dans le calendrier Outlook du commercial,
-// à partir d'un RDV planifié dans le CRM.
-
+const { corsResponse, optionsResponse } = require('./cors');
 const { getValidAccessToken } = require('./_refresh-token');
 
 exports.handler = async (event) => {
-  if (event.httpMethod !== 'POST') {
-    return { statusCode: 405, body: 'Méthode non autorisée.' };
-  }
+  if (event.httpMethod === 'OPTIONS') return optionsResponse();
+  if (event.httpMethod !== 'POST') return corsResponse(405, 'Méthode non autorisée.');
 
   let payload;
-  try {
-    payload = JSON.parse(event.body);
-  } catch (e) {
-    return { statusCode: 400, body: 'JSON invalide.' };
-  }
+  try { payload = JSON.parse(event.body); } catch (e) { return corsResponse(400, 'JSON invalide.'); }
 
   const { commercial, rdv } = payload;
-  if (!commercial || !rdv) {
-    return { statusCode: 400, body: 'Paramètres "commercial" et "rdv" requis.' };
-  }
+  if (!commercial || !rdv) return corsResponse(400, 'Paramètres "commercial" et "rdv" requis.');
 
   const accessToken = await getValidAccessToken(commercial);
-  if (!accessToken) {
-    return { statusCode: 401, body: 'Ce commercial n\'a pas (ou plus) connecté son compte Outlook.' };
-  }
+  if (!accessToken) return corsResponse(401, 'Ce commercial n\'a pas connecté son compte Outlook.');
 
-  // Construit l'événement au format attendu par Microsoft Graph
   const eventBody = {
     subject: `${rdv.nom_cp || 'RDV client'}${rdv.nature_cp ? ' — ' + rdv.nature_cp : ''}`,
-    body: {
-      contentType: 'text',
-      content: rdv.objet || ''
-    },
-    start: {
-      dateTime: `${rdv.date_rdv}T${rdv.heure_rdv || '09:00'}:00`,
-      timeZone: 'Europe/Paris'
-    },
-    end: {
-      dateTime: `${rdv.date_rdv}T${rdv.heure_fin_rdv || '10:00'}:00`,
-      timeZone: 'Europe/Paris'
-    },
+    body: { contentType: 'text', content: rdv.objet || '' },
+    start: { dateTime: `${rdv.date_rdv}T${rdv.heure_rdv || '09:00'}:00`, timeZone: 'Europe/Paris' },
+    end: { dateTime: `${rdv.date_rdv}T${rdv.heure_fin_rdv || '10:00'}:00`, timeZone: 'Europe/Paris' },
     location: { displayName: rdv.nom_cp || '' }
   };
 
@@ -52,23 +30,15 @@ exports.handler = async (event) => {
 
   const graphRes = await fetch(graphUrl, {
     method,
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      'Content-Type': 'application/json'
-    },
+    headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
     body: JSON.stringify(eventBody)
   });
 
   if (!graphRes.ok) {
     const errText = await graphRes.text();
-    return { statusCode: graphRes.status, body: `Erreur Microsoft Graph : ${errText}` };
+    return corsResponse(graphRes.status, `Erreur Microsoft Graph : ${errText}`);
   }
 
   const createdEvent = await graphRes.json();
-
-  return {
-    statusCode: 200,
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ outlook_event_id: createdEvent.id })
-  };
+  return corsResponse(200, { outlook_event_id: createdEvent.id });
 };
